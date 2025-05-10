@@ -23,4 +23,5 @@ func loadConfiguration() aws.Config {
 
 func init() {
 	Cmd.AddCommand(findCmd)
+	Cmd.AddCommand(lastAccessedCmd)
 }

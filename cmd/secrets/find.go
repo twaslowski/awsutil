@@ -13,7 +13,7 @@ import (
 
 var findCmd = &cobra.Command{
 	Use:   "find <search-string>",
-	Short: "Secretsmanager utilities",
+	Short: "Fuzzy-find secrets",
 	Long: `Argument:
 <search-string>   Keyword to search for`,
 	Args: cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
@@ -37,21 +37,19 @@ func executeFind() func(cmd *cobra.Command, args []string) {
 			IncludePlannedDeletion: &includeDeleted,
 		})
 
+		table := tablewriter.NewWriter(os.Stdout)
+		table.SetHeader([]string{"Name", "Description"})
 		for paginator.HasMorePages() {
 			output, err := paginator.NextPage(context.TODO())
 			if err != nil {
 				log.Fatal(err)
 			}
 
-			table := tablewriter.NewWriter(os.Stdout)
-			table.SetHeader([]string{"Name", "Description"})
-
 			for _, object := range output.SecretList {
 				table.Append([]string{aws.ToString(object.Name), aws.ToString(object.Description)})
 			}
-
-			table.Render()
 		}
+		table.Render()
 	}
 }
 
