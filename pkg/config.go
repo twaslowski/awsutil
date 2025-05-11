@@ -7,8 +7,8 @@ import (
 	"log"
 )
 
-func LoadConfiguration() aws.Config {
-	cfg, err := config.LoadDefaultConfig(context.TODO())
+func LoadConfiguration(region string) aws.Config {
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
 	if err != nil {
 		log.Fatal(err)
 	}

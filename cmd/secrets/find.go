@@ -24,9 +24,10 @@ var findCmd = &cobra.Command{
 func executeFind() func(cmd *cobra.Command, args []string) {
 	return func(cmd *cobra.Command, args []string) {
 		searchString := args[0]
+		region, _ := cmd.PersistentFlags().GetString("region")
 		includeDeleted, _ := cmd.Flags().GetBool("include-deleted")
 		showArn, _ := cmd.Flags().GetBool("show-arn")
-		cfg := util.LoadConfiguration()
+		cfg := util.LoadConfiguration(region)
 		client := secretsmanager.NewFromConfig(cfg)
 
 		paginator := secretsmanager.NewListSecretsPaginator(client, &secretsmanager.ListSecretsInput{

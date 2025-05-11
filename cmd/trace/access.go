@@ -41,7 +41,8 @@ var accessCmd = &cobra.Command{
 func executeLastAccess() func(cmd *cobra.Command, args []string) {
 	return func(cmd *cobra.Command, args []string) {
 		secret := args[0]
-		cfg := util.LoadConfiguration()
+		region, _ := cmd.PersistentFlags().GetString("region")
+		cfg := util.LoadConfiguration(region)
 		client := cloudtrail.NewFromConfig(cfg)
 		startDate := time.Now().AddDate(0, 0, -7)
 
