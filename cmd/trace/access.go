@@ -1,6 +1,7 @@
-package secrets
+package trace
 
 import (
+	util "awsutil/pkg"
 	"context"
 	"encoding/json"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -28,11 +29,11 @@ type UserIdentity struct {
 	AccountId   string
 }
 
-var lastAccessedCmd = &cobra.Command{
-	Use:   "last-accessed <secret-arn>",
-	Short: "Analyze access to secrets",
+var accessCmd = &cobra.Command{
+	Use:   "access <resource-arn>",
+	Short: "Analyze access on resources",
 	Long: `Argument:
-<secret-arn>   Secret to check access for`,
+<resource-arn>   Resource to check access for`,
 	Args: cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
 	Run:  executeLastAccess(),
 }
@@ -40,7 +41,7 @@ var lastAccessedCmd = &cobra.Command{
 func executeLastAccess() func(cmd *cobra.Command, args []string) {
 	return func(cmd *cobra.Command, args []string) {
 		secret := args[0]
-		cfg := loadConfiguration()
+		cfg := util.LoadConfiguration()
 		client := cloudtrail.NewFromConfig(cfg)
 		startDate := time.Now().AddDate(0, 0, -7)
 

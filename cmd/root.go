@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"awsutil/cmd/trace"
 	"os"
 
 	"awsutil/cmd/secrets"
@@ -24,4 +25,5 @@ func Execute() {
 
 func init() {
 	rootCmd.AddCommand(secrets.Cmd)
+	rootCmd.AddCommand(trace.Cmd)
 }
