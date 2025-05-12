@@ -24,9 +24,9 @@ var findCmd = &cobra.Command{
 func executeFind() func(cmd *cobra.Command, args []string) {
 	return func(cmd *cobra.Command, args []string) {
 		searchString := args[0]
-		region, _ := cmd.PersistentFlags().GetString("region")
-		includeDeleted, _ := cmd.Flags().GetBool("include-deleted")
-		showArn, _ := cmd.Flags().GetBool("show-arn")
+		region := util.Require(cmd.Flags().GetString("region"))
+		includeDeleted := util.Require(cmd.Flags().GetBool("include-deleted"))
+		showArn := util.Require(cmd.Flags().GetBool("show-arn"))
 		cfg := util.LoadConfiguration(region)
 		client := secretsmanager.NewFromConfig(cfg)
 
@@ -41,7 +41,7 @@ func executeFind() func(cmd *cobra.Command, args []string) {
 		})
 
 		table := tablewriter.NewWriter(os.Stdout)
-		table.SetHeader(getHeaders(showArn))
+		table.Header(getHeaders(showArn))
 		for paginator.HasMorePages() {
 			output, err := paginator.NextPage(context.TODO())
 			if err != nil {
@@ -49,10 +49,10 @@ func executeFind() func(cmd *cobra.Command, args []string) {
 			}
 
 			for _, object := range output.SecretList {
-				table.Append(getTableEntry(object, showArn))
+				util.CheckErr(table.Append(getTableEntry(object, showArn)))
 			}
 		}
-		table.Render()
+		util.CheckErr(table.Render())
 	}
 }
 

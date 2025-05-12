@@ -24,7 +24,8 @@ func Execute() {
 }
 
 func init() {
+	rootCmd.PersistentFlags().String("region", "eu-central-1", "AWS Region to run in")
+
 	rootCmd.AddCommand(secrets.Cmd)
 	rootCmd.AddCommand(trace.Cmd)
-	rootCmd.PersistentFlags().String("region", "eu-central-1", "AWS Region to run in")
 }

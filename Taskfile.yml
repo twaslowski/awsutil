@@ -1,0 +1,31 @@
+version: '3'
+
+tasks:
+  build:
+    desc: Build the Go project
+    cmds:
+      - go build ./...
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test ./...
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - go fmt ./...
+
+  lint:
+    desc: Run linters
+    cmds:
+      - golangci-lint run
+
+  install:
+    desc: Run linters
+    cmds:
+      - go install ./...
+
+  all:
+    desc: Run format, lint, build, and test
+    deps: [fmt, lint, build, test]

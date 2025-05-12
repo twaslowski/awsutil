@@ -10,5 +10,7 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
+	Cmd.PersistentFlags().String("start", "7d", "Start date")
+
 	Cmd.AddCommand(accessCmd)
 }

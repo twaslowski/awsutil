@@ -4,6 +4,7 @@ import (
 	util "awsutil/pkg"
 	"context"
 	"encoding/json"
+	"github.com/araddon/dateparse"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudtrail"
 	"github.com/aws/aws-sdk-go-v2/service/cloudtrail/types"
@@ -35,16 +36,22 @@ var accessCmd = &cobra.Command{
 	Long: `Argument:
 <resource-arn>   Resource to check access for`,
 	Args: cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
-	Run:  executeLastAccess(),
+	Run:  executeAccessCmd(),
 }
 
-func executeLastAccess() func(cmd *cobra.Command, args []string) {
+func executeAccessCmd() func(cmd *cobra.Command, args []string) {
 	return func(cmd *cobra.Command, args []string) {
 		secret := args[0]
-		region, _ := cmd.PersistentFlags().GetString("region")
+
+		region := util.Require(cmd.Flags().GetString("region"))
+		start := util.Require(cmd.Flags().GetString("start"))
+		startDate, err := dateparse.ParseAny(start)
+		if err != nil {
+			log.Fatalf("Error parsing date: %s", startDate)
+		}
+
 		cfg := util.LoadConfiguration(region)
 		client := cloudtrail.NewFromConfig(cfg)
-		startDate := time.Now().AddDate(0, 0, -7)
 
 		paginator := cloudtrail.NewLookupEventsPaginator(client, &cloudtrail.LookupEventsInput{
 			StartTime: &startDate,
@@ -57,28 +64,30 @@ func executeLastAccess() func(cmd *cobra.Command, args []string) {
 			},
 		})
 
-		table := tablewriter.NewWriter(os.Stdout)
-		table.SetHeader([]string{"Time", "Event", "Principal"})
+		table := tablewriter.NewTable(os.Stdout)
+		table.Header([]string{"Time", "Event", "Principal"})
+
 		for paginator.HasMorePages() {
 			output, err := paginator.NextPage(context.TODO())
 			if err != nil {
-				log.Fatal(err)
+				log.Fatalf("Failed to retrieve page: %s", err)
 			}
 
 			for _, event := range output.Events {
 				var cloudTrailEvent CloudTrailEvent
 				err = json.Unmarshal([]byte(aws.ToString(event.CloudTrailEvent)), &cloudTrailEvent)
-
 				if err != nil {
-					log.Fatal(err)
+					log.Fatalf("Failed to parse JSON: %s", err)
 				}
 
-				table.Append([]string{cloudTrailEvent.EventTime.String(),
+				util.CheckErr(table.Append([]string{
+					cloudTrailEvent.EventTime.String(),
 					cloudTrailEvent.EventName,
 					cloudTrailEvent.UserIdentity.Arn,
-				})
+				}))
 			}
 		}
-		table.Render()
+
+		util.CheckErr(table.Render())
 	}
 }
