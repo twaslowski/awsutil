@@ -57,17 +57,20 @@ func executeFind() func(cmd *cobra.Command, args []string) {
 }
 
 func getTableEntry(entry types.SecretListEntry, showArn bool) []string {
-	row := []string{aws.ToString(entry.Name), aws.ToString(entry.Description)}
+	identifier := aws.ToString(entry.Name)
 	if showArn {
-		row = append(row, aws.ToString(entry.ARN))
+		identifier = aws.ToString(entry.ARN)
 	}
+	row := []string{identifier, util.TruncateString(aws.ToString(entry.Description), 50)}
 	return row
 }
 
 func getHeaders(showArn bool) []string {
-	headers := []string{"Name", "Description"}
+	headers := []string{"Description"}
 	if showArn {
-		headers = append(headers, "ARN")
+		headers = append([]string{"ARN"}, headers...)
+	} else {
+		headers = append([]string{"Name"}, headers...)
 	}
 	return headers
 }
