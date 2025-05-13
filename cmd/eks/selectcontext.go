@@ -1,60 +1,90 @@
 package eks
 
 import (
-	util "awsutil/pkg"
 	"context"
+	"errors"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/eks"
 	"github.com/spf13/cobra"
-	"log"
 	"os/exec"
 
 	"github.com/manifoldco/promptui"
 )
 
+var errNoClustersFound = errors.New("no clusters found")
+
+type Client interface {
+	ListClusters(ctx context.Context, params *eks.ListClustersInput, optFns ...func(*eks.Options)) (*eks.ListClustersOutput, error)
+}
+
 var selectContextCommand = &cobra.Command{
 	Use:   "select-context",
 	Short: "Interactively select EKS context",
-	Run:   executeSelectContext(),
+	RunE:  executeSelectContext(),
 }
 
-func executeSelectContext() func(cmd *cobra.Command, args []string) {
-	return func(cmd *cobra.Command, args []string) {
-		region := util.Require(cmd.Flags().GetString("region"))
-		config := util.LoadConfiguration(region)
+func executeSelectContext() func(cmd *cobra.Command, args []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		region, err := cmd.Flags().GetString("region")
+		if err != nil {
+			return fmt.Errorf("failed to get region flag: %w", err)
+		}
 
-		client := eks.NewFromConfig(config)
-		clusters := retrieveClusters(*client)
-		selectedCluster := selectCluster(clusters)
-		updateKubeconfig(selectedCluster, region)
+		cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
+		if err != nil {
+			return fmt.Errorf("failed to load AWS config: %w", err)
+		}
+
+		client := eks.NewFromConfig(cfg)
+
+		clusters, err := retrieveClusters(client)
+		if err != nil {
+			return fmt.Errorf("failed to retrieve clusters: %w", err)
+		}
+
+		selectedCluster, err := selectCluster(clusters)
+		if err != nil {
+			return fmt.Errorf("failed to select cluster: %w", err)
+		}
+
+		if err := updateKubeconfig(selectedCluster, region); err != nil {
+			return fmt.Errorf("failed to update kubeconfig: %w", err)
+		}
+		return nil
 	}
 }
 
-func updateKubeconfig(result string, region string) {
+func updateKubeconfig(result string, region string) error {
 	ext := exec.Command("aws", "eks", "update-kubeconfig", "--name", result, "--region", region)
 	err := ext.Run()
 	if err != nil {
-		log.Fatalf("Failed to update cluster config: %s", err)
+		return err
 	}
 	fmt.Printf("Successfully connected to cluster: %s\n", result)
+	return nil
 }
 
-func retrieveClusters(client eks.Client) []string {
+func retrieveClusters(client Client) ([]string, error) {
 	output, err := client.ListClusters(context.TODO(), nil)
 	if err != nil {
-		log.Fatalf("Could not retrieve clusters: %s", err)
+		return nil, fmt.Errorf("could not retrieve clusters: %w", err)
 	}
-	return output.Clusters
+
+	if len(output.Clusters) == 0 {
+		return nil, errNoClustersFound
+	}
+	return output.Clusters, nil
 }
 
-func selectCluster(clusters []string) string {
+func selectCluster(clusters []string) (string, error) {
 	prompt := promptui.Select{
 		Label: "Select Cluster",
 		Items: clusters,
 	}
 	_, result, err := prompt.Run()
 	if err != nil {
-		log.Fatalf("Failed to select cluster: %s", err)
+		return "", err
 	}
-	return result
+	return result, nil
 }

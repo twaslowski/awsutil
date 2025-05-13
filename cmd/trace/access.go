@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"github.com/araddon/dateparse"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudtrail"
 	"github.com/aws/aws-sdk-go-v2/service/cloudtrail/types"
 	"github.com/olekukonko/tablewriter"
@@ -36,11 +37,11 @@ var accessCmd = &cobra.Command{
 	Long: `Argument:
 <resource-arn>   Resource to check access for`,
 	Args: cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
-	Run:  executeAccessCmd(),
+	RunE: executeAccessCmd(),
 }
 
-func executeAccessCmd() func(cmd *cobra.Command, args []string) {
-	return func(cmd *cobra.Command, args []string) {
+func executeAccessCmd() func(cmd *cobra.Command, args []string) error {
+	return func(cmd *cobra.Command, args []string) error {
 		secret := args[0]
 
 		region := util.Require(cmd.Flags().GetString("region"))
@@ -50,7 +51,11 @@ func executeAccessCmd() func(cmd *cobra.Command, args []string) {
 			log.Fatalf("Error parsing date: %s", startDate)
 		}
 
-		cfg := util.LoadConfiguration(region)
+		cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
+		if err != nil {
+			return err
+		}
+
 		client := cloudtrail.NewFromConfig(cfg)
 
 		paginator := cloudtrail.NewLookupEventsPaginator(client, &cloudtrail.LookupEventsInput{
@@ -88,6 +93,6 @@ func executeAccessCmd() func(cmd *cobra.Command, args []string) {
 			}
 		}
 
-		util.CheckErr(table.Render())
+		return table.Render()
 	}
 }

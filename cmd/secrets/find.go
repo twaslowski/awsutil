@@ -4,11 +4,11 @@ import (
 	util "awsutil/pkg"
 	"context"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
-	"log"
 	"os"
 )
 
@@ -18,18 +18,34 @@ var findCmd = &cobra.Command{
 	Long: `Argument:
 <search-string>   Keyword to search for`,
 	Args: cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
-	Run:  executeFind(),
+	RunE: executeFind(),
 }
 
-func executeFind() func(cmd *cobra.Command, args []string) {
-	return func(cmd *cobra.Command, args []string) {
+func executeFind() func(cmd *cobra.Command, args []string) error {
+	return func(cmd *cobra.Command, args []string) error {
 		searchString := args[0]
-		region := util.Require(cmd.Flags().GetString("region"))
-		includeDeleted := util.Require(cmd.Flags().GetBool("include-deleted"))
-		showArn := util.Require(cmd.Flags().GetBool("show-arn"))
-		cfg := util.LoadConfiguration(region)
-		client := secretsmanager.NewFromConfig(cfg)
 
+		region, err := cmd.Flags().GetString("region")
+		if err != nil {
+			return err
+		}
+
+		includeDeleted, err := cmd.Flags().GetBool("include-deleted")
+		if err != nil {
+			return err
+		}
+
+		showArn, err := cmd.Flags().GetBool("show-arn")
+		if err != nil {
+			return err
+		}
+
+		cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
+		if err != nil {
+			return err
+		}
+
+		client := secretsmanager.NewFromConfig(cfg)
 		paginator := secretsmanager.NewListSecretsPaginator(client, &secretsmanager.ListSecretsInput{
 			Filters: []types.Filter{
 				{
@@ -42,17 +58,21 @@ func executeFind() func(cmd *cobra.Command, args []string) {
 
 		table := tablewriter.NewWriter(os.Stdout)
 		table.Header(getHeaders(showArn))
+
 		for paginator.HasMorePages() {
 			output, err := paginator.NextPage(context.TODO())
 			if err != nil {
-				log.Fatal(err)
+				return err
 			}
 
 			for _, object := range output.SecretList {
-				util.CheckErr(table.Append(getTableEntry(object, showArn)))
+				err = table.Append(getTableEntry(object, showArn))
+				if err != nil {
+					return err
+				}
 			}
 		}
-		util.CheckErr(table.Render())
+		return table.Render()
 	}
 }
 
