@@ -46,7 +46,7 @@ func executeAccessCmd() func(cmd *cobra.Command, args []string) error {
 
 		region := util.Require(cmd.Flags().GetString("region"))
 		start := util.Require(cmd.Flags().GetString("start"))
-		startDate, err := dateparse.ParseAny(start)
+		startDate, err := parseStartDate(start)
 		if err != nil {
 			log.Fatalf("Error parsing date: %s", startDate)
 		}
@@ -95,4 +95,20 @@ func executeAccessCmd() func(cmd *cobra.Command, args []string) error {
 
 		return table.Render()
 	}
+}
+
+func parseStartDate(input string) (time.Time, error) {
+	startDate, err := dateparse.ParseAny(input)
+	if err != nil {
+		return calculateStartDateFromDelta(input)
+	}
+	return startDate, nil
+}
+
+func calculateStartDateFromDelta(input string) (time.Time, error) {
+	delta, err := util.ParseTimeDelta(input)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.Now().Add(-delta), nil
 }
