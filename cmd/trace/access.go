@@ -4,6 +4,7 @@ import (
 	util "awsutil/pkg"
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/araddon/dateparse"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -11,17 +12,20 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudtrail/types"
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
-	"log"
 	"os"
 	"time"
 )
 
+const awsService = "AWSService"
+const assumedRole = "AssumedRole"
+
 type CloudTrailEvent struct {
-	EventSource     string
-	EventName       string
-	UserIdentity    UserIdentity
-	EventTime       time.Time
-	SourceIpAddress string
+	EventSource       string
+	EventName         string
+	UserIdentity      UserIdentity
+	EventTime         time.Time
+	SourceIpAddress   string
+	RequestParameters map[string]interface{}
 }
 
 type UserIdentity struct {
@@ -42,59 +46,122 @@ var accessCmd = &cobra.Command{
 
 func executeAccessCmd() func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
-		secret := args[0]
+		resource := args[0]
 
-		region := util.Require(cmd.Flags().GetString("region"))
-		start := util.Require(cmd.Flags().GetString("start"))
-		startDate, err := parseStartDate(start)
+		region, serviceOnly, startDate, err := parseFlags(cmd)
 		if err != nil {
-			log.Fatalf("Error parsing date: %s", startDate)
+			return fmt.Errorf("error parsing flags: %v", err)
 		}
 
 		cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
 		if err != nil {
-			return err
+			return fmt.Errorf("error loading configuration: %v", err)
 		}
 
 		client := cloudtrail.NewFromConfig(cfg)
-
-		paginator := cloudtrail.NewLookupEventsPaginator(client, &cloudtrail.LookupEventsInput{
-			StartTime: &startDate,
-			EndTime:   nil,
-			LookupAttributes: []types.LookupAttribute{
-				{
-					AttributeKey:   "ResourceName",
-					AttributeValue: &secret,
-				},
-			},
-		})
+		paginator := createPaginator(client, startDate, resource)
 
 		table := tablewriter.NewTable(os.Stdout)
-		table.Header([]string{"Time", "Event", "Principal"})
+		table.Header(header(serviceOnly))
 
 		for paginator.HasMorePages() {
 			output, err := paginator.NextPage(context.TODO())
 			if err != nil {
-				log.Fatalf("Failed to retrieve page: %s", err)
+				return fmt.Errorf("failed to retrieve page: %s", err)
 			}
 
 			for _, event := range output.Events {
-				var cloudTrailEvent CloudTrailEvent
-				err = json.Unmarshal([]byte(aws.ToString(event.CloudTrailEvent)), &cloudTrailEvent)
+				cloudTrailEvent, err := parseCloudTrailEvent(event)
 				if err != nil {
-					log.Fatalf("Failed to parse JSON: %s", err)
+					return fmt.Errorf("failed to unmarshal CloudTrailEvent: %v", err)
 				}
 
-				util.CheckErr(table.Append([]string{
-					cloudTrailEvent.EventTime.String(),
-					cloudTrailEvent.EventName,
-					cloudTrailEvent.UserIdentity.Arn,
-				}))
+				err = tableAppend(table, cloudTrailEvent, serviceOnly)
+				if err != nil {
+					return fmt.Errorf("failed to write to table: %v", err)
+				}
 			}
 		}
 
 		return table.Render()
 	}
+}
+
+func tableAppend(table *tablewriter.Table, cloudTrailEvent CloudTrailEvent, serviceOnly bool) error {
+	if serviceOnly && cloudTrailEvent.UserIdentity.Type != awsService {
+		return nil
+	}
+	if !serviceOnly && cloudTrailEvent.UserIdentity.Type != assumedRole {
+		return nil
+	}
+
+	row := []string{
+		cloudTrailEvent.EventTime.String(),
+		cloudTrailEvent.EventName,
+	}
+
+	if serviceOnly {
+		row = append(row, prettyPrintRequestParameters(cloudTrailEvent.RequestParameters))
+	} else {
+		row = append(row, cloudTrailEvent.UserIdentity.Arn)
+	}
+
+	return table.Append(row)
+}
+
+func header(service bool) []string {
+	if service {
+		return []string{"Time", "Event", "RequestParameters"}
+	}
+	return []string{"Time", "Event", "Principal"}
+}
+
+func createPaginator(client *cloudtrail.Client, startDate time.Time, resource string) *cloudtrail.LookupEventsPaginator {
+	return cloudtrail.NewLookupEventsPaginator(client, &cloudtrail.LookupEventsInput{
+		StartTime: &startDate,
+		EndTime:   nil,
+		LookupAttributes: []types.LookupAttribute{
+			{
+				AttributeKey:   "ResourceName",
+				AttributeValue: &resource,
+			},
+		},
+	})
+}
+
+func parseFlags(cmd *cobra.Command) (string, bool, time.Time, error) {
+	region, err := cmd.Flags().GetString("region")
+	if err != nil {
+		return "", false, time.Time{}, err
+	}
+
+	start, err := cmd.Flags().GetString("start")
+	if err != nil {
+		return "", false, time.Time{}, err
+	}
+
+	service, err := cmd.Flags().GetBool("service")
+	if err != nil {
+		return "", false, time.Time{}, err
+	}
+
+	startDate, err := parseStartDate(start)
+	if err != nil {
+		return "", false, time.Time{}, err
+	}
+
+	return region, service, startDate, nil
+}
+
+func parseCloudTrailEvent(event types.Event) (CloudTrailEvent, error) {
+	var cloudTrailEvent CloudTrailEvent
+
+	err := json.Unmarshal([]byte(aws.ToString(event.CloudTrailEvent)), &cloudTrailEvent)
+	if err != nil {
+		return cloudTrailEvent, err
+	}
+
+	return cloudTrailEvent, nil
 }
 
 func parseStartDate(input string) (time.Time, error) {
@@ -111,4 +178,16 @@ func calculateStartDateFromDelta(input string) (time.Time, error) {
 		return time.Time{}, err
 	}
 	return time.Now().Add(-delta), nil
+}
+
+func prettyPrintRequestParameters(m map[string]interface{}) string {
+	b, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("%v", m)
+	}
+	return string(b)
+}
+
+func init() {
+	accessCmd.Flags().Bool("service", false, "Only events generated by AWS services internally.")
 }
