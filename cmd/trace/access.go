@@ -88,21 +88,20 @@ func executeAccessCmd() func(cmd *cobra.Command, args []string) error {
 }
 
 func tableAppend(table *tablewriter.Table, cloudTrailEvent CloudTrailEvent, serviceOnly bool) error {
-	if serviceOnly && cloudTrailEvent.UserIdentity.Type != awsService {
-		return nil
-	}
-	if !serviceOnly && cloudTrailEvent.UserIdentity.Type != assumedRole {
-		return nil
-	}
-
 	row := []string{
 		cloudTrailEvent.EventTime.String(),
 		cloudTrailEvent.EventName,
 	}
 
 	if serviceOnly {
+		if cloudTrailEvent.UserIdentity.Type != awsService {
+			return nil
+		}
 		row = append(row, prettyPrintRequestParameters(cloudTrailEvent.RequestParameters))
 	} else {
+		if cloudTrailEvent.UserIdentity.Type != assumedRole {
+			return nil
+		}
 		row = append(row, cloudTrailEvent.UserIdentity.Arn)
 	}
 
